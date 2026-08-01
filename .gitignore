@@ -1,0 +1,9 @@
+# Raw CIFAR-10 batches (~155MB of raw data — not pushed)
+cifar-10-batches-py/
+
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/

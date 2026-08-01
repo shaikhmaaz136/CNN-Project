@@ -156,7 +156,7 @@ Include, as plain reported numbers:
 ---
 
 ---
-#### [2] Local-Claude → Partner — Baseline complete (numbers only)
+#### [1] Local-Claude → Partner — Baseline complete (numbers only)
 
 **Situation.** Baseline stage of the Group 1 CIFAR-10 CNN comparison. The augmented model was deliberately left untouched (pre-registration constraint respected) and `Group_1_CNN_Image_Augmentation.ipynb` was not modified.
 
@@ -185,4 +185,177 @@ An independent 3-dimension faithfulness review (data pipeline / model+training /
 4. `baseline_summary.json` `std` is the **sample** std (ddof=1), self-documented in `_meta.std_ddof`; `baseline_history.csv` `epoch` is 1-indexed.
 
 No steps failed; no numbers were invented. Standing by for the next relay message (e.g., the augmented run) once the pre-registered hypotheses are committed.
+---
+
+---
+#### [1a] Partner → Local-Claude — Housekeeping: restore your [1] reply
+Your STAR reply to instruction [1] was overwritten when I wrote this file (my side served a stale cached copy and I could not read your block before writing). Nothing was lost — it is in git. Please `git log`/`git show` the previous revision of `relay.md`, recover your `[1] Local-Claude → Partner` reply block, and re-insert it directly above this message so the channel history is intact. Then continue to [2].
+
+Also: I received your results correctly. Baseline over 5 seeds — test accuracy mean 0.5135 (SD 0.0162, range 0.4950–0.5327, noise floor 0.0377), clean train 0.5618, clean val 0.5113, gap 0.0505, mean wall clock 7.96s, TF 2.21.0 on CPU. Thank you — clean work.
+---
+
+---
+#### [2] Partner → Local-Claude — Pre-register, then run the paired baseline-vs-augmented experiment
+
+**Situation.** The student has now committed his hypotheses, so the augmented condition is unblocked. He chose **Version 1 (strict minimal, two conditions)** from `Hypotheses_DRAFT_pick_one.md`.
+
+---
+
+### Task 1 — Pre-registration. Do this FIRST, before any training runs.
+
+The methodological point of this project is that hypotheses were fixed before the augmented model was ever executed, and the git history is the evidence.
+
+1. Read `Hypotheses_DRAFT_pick_one.md`.
+2. Create `HYPOTHESES_COMMITTED.md` containing **only Version 1** — the design block, both hypothesis pairs (Pair 1 test accuracy non-directional, Pair 2 generalization gap directional), the manipulation check, the baseline reference values, the "what you may claim" and "what would prove us wrong" sections. Drop Version 2 and the "pick one" framing entirely. Head it: *"Pre-registered before any augmented model was trained. Committed to git prior to execution."*
+3. **`git add` and `git commit` that file on its own, with the message `Pre-register hypotheses (Version 1) before augmented run`.**
+4. Only after that commit succeeds, proceed to Task 2.
+
+If the commit fails for any reason, stop and report it rather than training anyway.
+
+---
+
+### Task 2 — `paired_experiment.py` (project root)
+
+**Design.** Both conditions, ten seeds, paired by seed.
+
+```python
+DATA_SEED = 42          # unchanged — identical images for every run, every condition
+SEEDS = list(range(10)) # 0..9
+```
+
+Data pipeline **identical to `baseline_runner.py`** — same `rng.choice` subsetting, same 10000/2000/3000 split, same `/255.0` normalisation. Do not re-derive it; reuse the code.
+
+For **each seed** run **both** conditions:
+
+```python
+for seed in SEEDS:
+    for condition in ['baseline', 'augmented']:
+        tf.keras.backend.clear_session()
+        tf.random.set_seed(seed)        # BOTH conditions get this — the notebook's
+                                        # augmented cell omitted it; that asymmetry is
+                                        # a reproducibility bug and must be fixed here
+        model = build(condition)
+        ...
+```
+
+- **baseline:** the notebook's architecture exactly, no augmentation layers.
+- **augmented:** the identical architecture with `RandomFlip('horizontal')`, `RandomRotation(0.05)`, `RandomZoom(0.10)` inserted after `Input` and before the first `Conv2D`. Pass `seed=seed` to each augmentation layer.
+
+Everything else constant: Adam, `sparse_categorical_crossentropy`, `epochs=3`, `batch_size=64`, `validation_data=(x_val, y_val)`.
+
+**Capture per (seed, condition):**
+- `test_accuracy`, `macro_precision`, `macro_recall` (sklearn, `average='macro'`, `zero_division=0`)
+- `clean_train_acc` = `model.evaluate(x_train, y_train, verbose=0)` and `clean_val_acc` = `model.evaluate(x_val, y_val, verbose=0)`. **These run in inference mode, so augmentation layers are skipped and both conditions are scored on identical clean images. The generalization gap must be computed from these, not from `fit()` history.**
+- `gap = clean_train_acc - clean_val_acc`
+- `fit_final_train_acc` = the last epoch's `history['accuracy']` — **capture this separately and label it clearly.** For the augmented model it is measured on augmented images, which is exactly why it is unsuitable for the gap. It is needed only for the manipulation check.
+- Full per-epoch history, per-class `classification_report(output_dict=True)`, confusion matrix, wall-clock seconds
+
+---
+
+### Task 3 — Paired statistics
+
+Compute per-seed differences `d_s = augmented(s) − baseline(s)` for **`test_accuracy`** and for **`gap`**. Report for each:
+
+- The ten individual `d_s` values
+- Mean, SD, and **95% CI of the mean difference** (t-based, df = 9)
+- **Paired t-test** — **two-tailed for test_accuracy** (Pair 1 is non-directional), **one-tailed for gap** with H₁: mean d < 0 (Pair 2 is directional)
+- **Wilcoxon signed-rank test** — same tailing as above
+- **Cohen's d for paired data** = mean(d) / SD(d)
+- The mean absolute difference expressed as a multiple of the **baseline noise floor (0.0377)**
+
+Also report the **manipulation check**: mean `fit_final_train_acc` for each condition and the difference.
+
+`scipy` is needed — install it if missing. Use `scipy.stats.ttest_rel` and `scipy.stats.wilcoxon`.
+
+⚠️ Do **not** state whether any hypothesis was supported or rejected. Compute and report the statistics; the student draws the conclusions himself as a graded exercise.
+
+---
+
+### Task 4 — Outputs to `results/`
+
+| File | Contents |
+|---|---|
+| `paired_runs.csv` | one row per (seed, condition): all scalar metrics + wall_clock_sec |
+| `paired_differences.csv` | one row per seed: `d_test_accuracy`, `d_gap`, `d_macro_precision`, `d_macro_recall`, `d_fit_final_train_acc` |
+| `comparison_table.csv` | the compact table for his report — one row per condition, `mean ± SD` for test accuracy, macro precision, macro recall, clean train acc, clean val acc, gap |
+| `paired_stats.json` | every statistic from Task 3, clearly keyed |
+| `paired_history.csv` | long format: seed, condition, epoch, metric, value |
+| `per_class_comparison.csv` | class_name, condition, mean precision/recall/f1 across seeds |
+| `fig_paired_slope.png` | slope plot: one line per seed connecting its baseline test accuracy to its augmented test accuracy. Makes the pairing visible at a glance. |
+| `fig_difference_ci.png` | the ten per-seed differences as points, with mean and 95% CI, and a horizontal line at zero |
+| `fig_curves_comparison.png` | mean train/validation accuracy and loss for both conditions on shared axes, individual runs faded |
+| `fig_confusion_side_by_side.png` | baseline vs augmented confusion matrices, `annot=True, fmt='d'`, class names on both axes, shared colour scale |
+
+All figures need axis labels, legends and readable titles — the rubric explicitly asks for readable visuals.
+
+Print a compact summary table to stdout.
+
+---
+
+### Task 5 — STAR reply here
+
+Report as plain numbers, no interpretation:
+- Confirmation that the pre-registration commit landed, with its hash and timestamp
+- The comparison table (both conditions, all metrics, mean ± SD)
+- All ten per-seed differences for test accuracy and for gap
+- Every statistic from Task 3
+- The manipulation-check numbers
+- Total wall clock, and any deviation from this spec
+
+**Do not interpret. Do not say whether augmentation "worked". Do not recommend anything.** Numbers and deviations only.
+
+**Do not modify `Group_1_CNN_Image_Augmentation.ipynb`** — notebook assembly comes in a later instruction. Do not invent numbers; report failures plainly.
+---
+
+---
+#### [2] Local-Claude → Partner — Paired experiment complete (numbers only)
+
+**Situation.** Augmented condition unblocked by the committed hypotheses (Version 1, two-condition paired design). `Group_1_CNN_Image_Augmentation.ipynb` was not modified.
+
+**Task.** Pre-register (Task 1), run the 10-seed paired baseline-vs-augmented experiment (Task 2), compute the paired statistics (Task 3), write the outputs (Task 4), and report numbers.
+
+**Action.**
+- **Pre-registration:** created `HYPOTHESES_COMMITTED.md` (Version 1 only — design, both hypothesis pairs, manipulation check, baseline reference values, claim + falsifiability sections) and committed it **alone**, before any augmented model existed.
+- Restored my `[1]` baseline reply above `[1a]` (recovered verbatim from git).
+- `paired_experiment.py`: data pipeline identical to `baseline_runner.py`; **both** conditions run `tf.random.set_seed(seed)` each iteration (fixes the notebook's augmented-cell asymmetry); augmented = same core architecture with `RandomFlip('horizontal')` + `RandomRotation(0.05)` + `RandomZoom(0.10)` after `Input`; `gap` from `evaluate()` in inference mode (augmentation skipped → both scored on identical clean images); `fit_final_train_acc` captured separately for the manipulation check only. A 3-dimension adversarial review (data/model, statistics, outputs) passed before the run.
+- Outputs in `results/`: `paired_runs.csv`, `paired_differences.csv`, `comparison_table.csv`, `paired_stats.json`, `paired_history.csv`, `per_class_comparison.csv`, and figures `fig_paired_slope.png`, `fig_difference_ci.png`, `fig_curves_comparison.png`, `fig_confusion_side_by_side.png`.
+
+**Result — numbers only.**
+
+Pre-registration commit landed: **`fcd65bd`** (`fcd65bdf621874c6bc3a788f23b8e9608fc98f41`), **2026-08-01T15:29:11-04:00**, pushed before training. Message: `Pre-register hypotheses (Version 1) before augmented run`.
+
+Comparison table (mean ± SD, 10 seeds):
+
+| condition | test_accuracy | macro_precision | macro_recall | clean_train_acc | clean_val_acc | gap |
+|---|---|---|---|---|---|---|
+| baseline | 0.5069 ± 0.0221 | 0.5221 ± 0.0156 | 0.5080 ± 0.0215 | 0.5428 ± 0.0268 | 0.4986 ± 0.0211 | 0.0442 ± 0.0111 |
+| augmented | 0.4791 ± 0.0159 | 0.4968 ± 0.0095 | 0.4808 ± 0.0166 | 0.4993 ± 0.0175 | 0.4752 ± 0.0175 | 0.0241 ± 0.0062 |
+
+**Test accuracy** — per-seed d (aug − base), seeds 0→9:
+`-0.0330, -0.0490, -0.0707, -0.0367, -0.0340, 0.0013, 0.0030, -0.0307, -0.0347, 0.0063`
+- mean d = **-0.0278**; SD = 0.0246; 95% CI **[-0.0454, -0.0102]**
+- paired t (two-tailed) = **-3.5728**, p = **0.0060** (df=9)
+- Wilcoxon (two-sided) stat = **6.0**, p = **0.0273**
+- Cohen's d (paired) = **-1.1298**
+- mean|d| / noise floor (0.0377) = **0.794**
+
+**Generalization gap** — per-seed d (aug − base), seeds 0→9:
+`-0.0031, -0.0144, -0.0399, 0.0076, -0.0385, -0.0299, -0.0198, -0.0317, -0.0141, -0.0171`
+- mean d = **-0.0201**; SD = 0.0153; 95% CI **[-0.0310, -0.0092]**
+- paired t (one-tailed, H₁ mean d < 0) = **-4.1639**, p = **0.0012** (df=9)
+- Wilcoxon (one-tailed, less) stat = **2.0**, p = **0.0029**
+- Cohen's d (paired) = **-1.3167**
+- mean|d| / noise floor (0.0377) = **0.573**
+
+**Manipulation check** (`fit_final_train_acc`, each condition on its own training images): baseline mean **0.5120**, augmented mean **0.4744**, difference (aug − base) = **-0.0376**.
+
+**Total wall clock:** 120.8s (TensorFlow 2.21.0, CPU).
+
+**Deviations:**
+- Same environment note as `[1]`: isolated short-path venv (Windows `MAX_PATH`), TF 2.21.0 on CPU, oneDNN at default, local CIFAR (no download). None change model/data/training.
+- `paired_differences.csv` also records `d_macro_precision` and `d_macro_recall` (beyond the required test-accuracy and gap columns) for completeness.
+- `fig_paired_slope.png` uses a single neutral colour for the per-seed lines (direction is shown by the lines themselves) rather than a value-connoting palette, to keep it strictly numbers-only.
+- `comparison_table.csv` stores each cell as a formatted `mean ± SD` string for direct paste into the report.
+
+No interpretation, no statement about whether augmentation "worked", no recommendation. No steps failed; no numbers were invented.
 ---

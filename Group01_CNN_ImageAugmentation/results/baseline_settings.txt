@@ -1,0 +1,12 @@
+BASELINE SETTINGS RECORD
+data_seed=42
+run_seeds=[0, 1, 2, 3, 4]
+train_size=10000  val_size=2000  test_size=3000
+image_shape=(32, 32, 3)
+class_count=10
+epochs=3  batch_size=64
+optimizer=adam  loss=sparse_categorical_crossentropy
+total_params=282250  trainable_params=282250
+tensorflow=2.21.0
+device=CPU
+data_source=local:C:\Users\MaazShaikh\Downloads\CNN Group Project\cifar-10-batches-py

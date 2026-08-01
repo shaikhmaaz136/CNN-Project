@@ -137,3 +137,4 @@ _(team to complete — numbers above are the evidence; write findings here)_
 | 2026-08-01 | Baseline recorded (5 seeds); TF 2.21.0 / CPU. Commit adds `baseline_runner.py`, `results/`. |
 | 2026-08-01 | Pre-registered hypotheses (Version 1) committed (`fcd65bd`) before the augmented run. |
 | 2026-08-01 | Paired baseline-vs-augmented experiment recorded (10 seeds); adds `paired_experiment.py` + paired `results/` artifacts. |
+| 2026-08-01 | Built + executed the graded submission notebook `Group01_CNN_ImageAugmentation/Group1_CNN_Image_Augmentation_FINAL.ipynb` (23 cells, outputs retained); §10–§13 render the committed run. |
